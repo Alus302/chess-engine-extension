@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "Chess Engine Assistant",
+  "version": "1.0.0",
+  "description": "Real-time chess move suggestions and analysis for chess.com and lichess",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://www.chess.com/*",
+    "https://lichess.org/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["stockfish.js", "stockfish.wasm"],
+      "matches": ["https://www.chess.com/*", "https://lichess.org/*"]
+    }
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.chess.com/*",
+        "https://lichess.org/*"
+      ],
+      "js": ["content.js"],
+      "css": ["styles.css"]
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Chess Engine Assistant"
+  },
+  "icons": {
+    "16": "images/icon-16.png",
+    "48": "images/icon-48.png",
+    "128": "images/icon-128.png"
+  }
+}

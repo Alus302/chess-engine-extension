@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chess Engine</title>
+    <link rel="stylesheet" href="popup-styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>♟️ Chess Engine</h1>
+            <div class="status" id="status">Ready</div>
+        </header>
+
+        <div class="controls">
+            <button id="toggleBtn" class="btn btn-primary">▶ Start Analysis</button>
+            <button id="settingsBtn" class="btn btn-secondary">⚙️</button>
+        </div>
+
+        <div id="boardSection" class="board-section" style="display:none;">
+            <div class="fen-display">
+                <label>Position (FEN):</label>
+                <input type="text" id="fenInput" readonly value="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1">
+                <button id="copyFenBtn" class="btn btn-small">Copy</button>
+            </div>
+
+            <div class="analysis-section">
+                <h3>Top 10 Moves</h3>
+                <div class="moves-list" id="movesList">
+                    <div class="loading">Waiting for position...</div>
+                </div>
+            </div>
+
+            <div class="stats">
+                <div class="stat-item">
+                    <label>Evaluation:</label>
+                    <span id="evaluation">0.00</span>
+                </div>
+                <div class="stat-item">
+                    <label>Depth:</label>
+                    <span id="depth">0</span>
+                </div>
+            </div>
+        </div>
+
+        <div id="settingsPanel" class="settings-panel" style="display:none;">
+            <h3>Settings</h3>
+            <div class="setting-item">
+                <label>
+                    <input type="checkbox" id="autoAnalysis" checked>
+                    Auto-analyze
+                </label>
+            </div>
+            <div class="setting-item">
+                <label>Engine Depth (1-20):
+                    <input type="number" id="engineDepth" min="1" max="20" value="15">
+                </label>
+            </div>
+            <button id="closeSettingsBtn" class="btn btn-primary">Close</button>
+        </div>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>

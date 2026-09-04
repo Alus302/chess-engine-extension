@@ -1,0 +1,270 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    width: 500px;
+    min-height: 300px;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: #f5f5f5;
+    color: #333;
+}
+
+.container {
+    padding: 16px;
+    background: white;
+    height: 100%;
+}
+
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid #667eea;
+}
+
+header h1 {
+    font-size: 20px;
+    color: #667eea;
+}
+
+.status {
+    font-size: 12px;
+    padding: 4px 12px;
+    background: #e3f2fd;
+    color: #1976d2;
+    border-radius: 20px;
+    font-weight: 600;
+}
+
+.status.active {
+    background: #e8f5e9;
+    color: #388e3c;
+}
+
+.controls {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.btn {
+    padding: 10px 16px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+.btn-primary {
+    background: #667eea;
+    color: white;
+    flex: 1;
+}
+
+.btn-primary:hover {
+    background: #5568d3;
+}
+
+.btn-secondary {
+    background: #f5f5f5;
+    color: #333;
+    border: 1px solid #ddd;
+}
+
+.btn-secondary:hover {
+    background: #efefef;
+}
+
+.btn-small {
+    padding: 6px 12px;
+    font-size: 12px;
+}
+
+.board-section {
+    max-height: 600px;
+    overflow-y: auto;
+}
+
+.fen-display {
+    margin-bottom: 16px;
+    padding: 12px;
+    background: #f5f5f5;
+    border-radius: 6px;
+}
+
+.fen-display label {
+    display: block;
+    font-size: 12px;
+    color: #666;
+    margin-bottom: 6px;
+    font-weight: 600;
+}
+
+.fen-display input {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    margin-bottom: 8px;
+}
+
+.analysis-section {
+    margin-bottom: 16px;
+}
+
+.analysis-section h3 {
+    font-size: 14px;
+    margin-bottom: 12px;
+    color: #333;
+}
+
+.moves-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 350px;
+    overflow-y: auto;
+}
+
+.move-item {
+    padding: 12px;
+    background: #f9f9f9;
+    border-left: 4px solid #667eea;
+    border-radius: 4px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.move-item.best {
+    border-left-color: #4caf50;
+    background: #f1f8f6;
+}
+
+.move-item.poor {
+    border-left-color: #ffc107;
+    background: #fffbf0;
+}
+
+.move-info {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex: 1;
+}
+
+.move-rank {
+    font-weight: 700;
+    color: #667eea;
+    min-width: 20px;
+}
+
+.move-notation {
+    font-family: 'Courier New', monospace;
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.move-evaluation {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.eval-value {
+    font-weight: 600;
+    min-width: 50px;
+    text-align: right;
+    color: #333;
+}
+
+.eval-value.positive {
+    color: #4caf50;
+}
+
+.eval-value.negative {
+    color: #d32f2f;
+}
+
+.loading {
+    text-align: center;
+    padding: 20px;
+    color: #999;
+    font-size: 14px;
+}
+
+.stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.stat-item {
+    padding: 12px;
+    background: #f5f5f5;
+    border-radius: 6px;
+    text-align: center;
+}
+
+.stat-item label {
+    display: block;
+    font-size: 11px;
+    color: #666;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.stat-item span {
+    display: block;
+    font-size: 16px;
+    font-weight: 700;
+    color: #667eea;
+}
+
+.settings-panel {
+    padding: 12px;
+    background: #f5f5f5;
+    border-radius: 6px;
+}
+
+.settings-panel h3 {
+    margin-bottom: 12px;
+    font-size: 14px;
+}
+
+.setting-item {
+    margin-bottom: 12px;
+    padding: 8px;
+    background: white;
+    border-radius: 4px;
+}
+
+.setting-item label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.setting-item input[type="checkbox"] {
+    cursor: pointer;
+}
+
+.setting-item input[type="number"] {
+    width: 60px;
+    padding: 4px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    margin-left: 8px;
+}

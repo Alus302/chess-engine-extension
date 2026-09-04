@@ -1,0 +1,26 @@
+/* Chess Engine Extension - Content Script Styles */
+
+.chess-engine-highlight {
+    position: absolute;
+    width: 12.5%;
+    height: 12.5%;
+    opacity: 0.4;
+    pointer-events: none;
+    border-radius: 4px;
+    z-index: 1000;
+}
+
+.chess-engine-highlight.best {
+    background: #4caf50;
+    box-shadow: 0 0 10px rgba(76, 175, 80, 0.6) inset;
+}
+
+.chess-engine-highlight.poor {
+    background: #ffc107;
+    box-shadow: 0 0 10px rgba(255, 193, 7, 0.6) inset;
+}
+
+.chess-engine-highlight.candidate {
+    background: #2196f3;
+    box-shadow: 0 0 8px rgba(33, 150, 243, 0.4) inset;
+}

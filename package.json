@@ -1,0 +1,24 @@
+{
+  "name": "chess-engine-extension",
+  "version": "1.0.0",
+  "description": "Real-time chess move suggestions and analysis for chess.com and lichess",
+  "main": "popup.js",
+  "scripts": {
+    "dev": "echo 'Load extension manually in chrome://extensions'",
+    "test": "echo 'No tests configured yet'",
+    "build": "echo 'Extension is ready to load as-is'"
+  },
+  "keywords": [
+    "chess",
+    "engine",
+    "analysis",
+    "stockfish",
+    "chess.com",
+    "lichess",
+    "extension"
+  ],
+  "author": "Alus302",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {}
+}

@@ -1,126 +1,218 @@
-// Chess Engine Extension - Content Script with Real-time Analysis
-// Automatically detects board changes and shows move evaluations
+// Chess Engine Extension - Content Script with Proper Stockfish Integration
+// Real-time analysis with automatic board detection
 
-console.log('Chess Engine content script loaded');
+console.log('🎯 Chess Engine content script loaded');
 
 let analysisEnabled = false;
-let stockfishEngine = null;
+let stockfishWorker = null;
 let engineReady = false;
 let currentFEN = '';
 let lastAnalyzedFEN = '';
 let topMoves = [];
 let boardHighlights = [];
+let analyzeTimeout = null;
 
-// Initialize
+// Initialize on load
 chrome.storage.local.get(['enabled'], (result) => {
     analysisEnabled = result.enabled || false;
     console.log('Analysis enabled:', analysisEnabled);
     if (analysisEnabled) {
-        initStockfish();
-        startMonitoring();
+        initializeEngine();
+        startBoardMonitoring();
     }
 });
 
-// Listen for messages from popup
+// Listen for toggle messages
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    console.log('Message received:', message);
+    console.log('📨 Message received:', message.type);
     
     if (message.type === 'toggleAnalysis') {
         analysisEnabled = message.enabled;
+        
         if (analysisEnabled) {
-            console.log('Starting analysis');
-            initStockfish();
-            startMonitoring();
+            console.log('✅ Starting analysis');
+            initializeEngine();
+            startBoardMonitoring();
         } else {
-            console.log('Stopping analysis');
+            console.log('⏸ Stopping analysis');
             clearAllHighlights();
             hidePanel();
+            if (stockfishWorker) {
+                stockfishWorker.postMessage({ type: 'stop' });
+            }
         }
         sendResponse({ success: true });
     }
 });
 
-// Initialize Stockfish engine from CDN
-function initStockfish() {
-    if (engineReady) return;
+// Initialize Stockfish engine
+function initializeEngine() {
+    if (engineReady) {
+        console.log('Engine already ready');
+        return;
+    }
     
-    console.log('Initializing Stockfish...');
+    console.log('🚀 Initializing Stockfish engine...');
     
     try {
-        // Load Stockfish from CDN
-        const script = document.createElement('script');
-        script.src = 'https://cdn.jsdelivr.net/npm/stockfish@15.1';
-        script.onload = () => {
-            console.log('Stockfish script loaded');
+        // Load Stockfish from CDN as worker
+        const workerCode = `
+            let stockfish = null;
+            let ready = false;
             
-            // Wait for Stockfish to be available
-            const checkStockfish = setInterval(() => {
-                if (window.Stockfish) {
-                    clearInterval(checkStockfish);
-                    console.log('Stockfish available, creating instance');
-                    
+            importScripts('https://cdn.jsdelivr.net/npm/stockfish@15.1');
+            
+            self.onmessage = function(e) {
+                if (e.data.type === 'init') {
                     try {
-                        stockfishEngine = window.Stockfish();
-                        setupEngineHandlers();
-                        engineReady = true;
-                        
-                        // Initialize engine
-                        sendToEngine('uci');
-                        console.log('Engine ready!');
-                    } catch (error) {
-                        console.error('Failed to create Stockfish instance:', error);
+                        stockfish = Stockfish();
+                        ready = true;
+                        self.postMessage({ type: 'ready' });
+                    } catch(err) {
+                        self.postMessage({ type: 'error', message: err.message });
+                    }
+                } else if (e.data.type === 'command') {
+                    if (stockfish && ready) {
+                        stockfish.postMessage(e.data.command);
+                    }
+                } else if (e.data.type === 'stop') {
+                    if (stockfish) {
+                        stockfish.postMessage('stop');
                     }
                 }
-            }, 100);
+            };
             
-            // Timeout
-            setTimeout(() => {
-                if (!engineReady) {
-                    console.error('Stockfish initialization timeout');
-                }
-            }, 5000);
+            // Capture engine output
+            let originalPostMessage = self.postMessage.bind(self);
+            self.engineOutput = function(line) {
+                self.postMessage({ type: 'output', data: line });
+            };
+        `;
+        
+        // Create worker blob
+        const blob = new Blob([workerCode], { type: 'application/javascript' });
+        const workerUrl = URL.createObjectURL(blob);
+        
+        stockfishWorker = new Worker(workerUrl);
+        
+        stockfishWorker.onmessage = handleEngineMessage;
+        stockfishWorker.onerror = (error) => {
+            console.error('❌ Worker error:', error);
+            
+            // Fallback: Load Stockfish directly
+            console.log('Trying direct Stockfish load...');
+            loadStockfishDirect();
         };
         
-        script.onerror = () => {
-            console.error('Failed to load Stockfish from CDN');
-        };
+        stockfishWorker.postMessage({ type: 'init' });
         
-        document.head.appendChild(script);
+        // Timeout
+        setTimeout(() => {
+            if (!engineReady) {
+                console.warn('⚠️ Engine init timeout, trying direct load...');
+                loadStockfishDirect();
+            }
+        }, 3000);
+        
     } catch (error) {
-        console.error('Error initializing Stockfish:', error);
+        console.error('❌ Worker creation failed:', error);
+        loadStockfishDirect();
     }
 }
 
-// Setup engine message handlers
-function setupEngineHandlers() {
-    if (!stockfishEngine) return;
+// Direct Stockfish loading (fallback)
+function loadStockfishDirect() {
+    console.log('Loading Stockfish directly from CDN...');
     
-    stockfishEngine.onmessage = (line) => {
-        if (line && line.includes('bestmove')) {
-            console.log('Best move line:', line);
-            parseAnalysisLine(line);
-        } else if (line && line.includes('info')) {
-            parseInfoLine(line);
-        }
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/stockfish@15.1';
+    
+    script.onload = () => {
+        console.log('Stockfish script loaded');
+        
+        setTimeout(() => {
+            if (window.Stockfish) {
+                try {
+                    const engine = window.Stockfish();
+                    engineReady = true;
+                    console.log('✅ Engine ready (direct load)');
+                    
+                    // Send init command
+                    engine.postMessage('uci');
+                    
+                    // Mock worker for compatibility
+                    stockfishWorker = {
+                        postMessage: (msg) => {
+                            if (typeof msg === 'string') {
+                                engine.postMessage(msg);
+                            } else if (msg.type === 'command') {
+                                engine.postMessage(msg.command);
+                            }
+                        }
+                    };
+                } catch (err) {
+                    console.error('Failed to create engine:', err);
+                }
+            }
+        }, 500);
     };
+    
+    script.onerror = () => {
+        console.error('❌ Failed to load Stockfish');
+    };
+    
+    document.head.appendChild(script);
+}
+
+// Handle engine messages
+function handleEngineMessage(e) {
+    const msg = e.data;
+    
+    if (msg.type === 'ready') {
+        engineReady = true;
+        console.log('✅ Engine ready');
+        sendEngineCommand('uci');
+    } else if (msg.type === 'output') {
+        parseEngineOutput(msg.data);
+    } else if (msg.type === 'error') {
+        console.error('Engine error:', msg.message);
+    }
 }
 
 // Send command to engine
-function sendToEngine(command) {
-    if (!stockfishEngine || !engineReady) {
-        console.log('Engine not ready');
+function sendEngineCommand(command) {
+    if (!stockfishWorker || !engineReady) {
+        console.log('⚠️ Engine not ready');
         return;
     }
     
     try {
-        console.log('Sending to engine:', command);
-        stockfishEngine.postMessage(command);
+        if (stockfishWorker.postMessage) {
+            stockfishWorker.postMessage({ type: 'command', command: command });
+        }
     } catch (error) {
-        console.error('Error sending to engine:', error);
+        console.error('Error sending command:', error);
     }
 }
 
-// Parse analysis info line
+// Parse engine output
+function parseEngineOutput(line) {
+    if (!line) return;
+    
+    console.log('📊 Engine:', line);
+    
+    // Parse info line
+    if (line.includes('info')) {
+        parseInfoLine(line);
+    }
+    
+    // Parse best move
+    if (line.includes('bestmove')) {
+        parseBestMove(line);
+    }
+}
+
+// Parse info line with moves and evaluations
 function parseInfoLine(line) {
     try {
         const parts = line.split(' ');
@@ -129,51 +221,53 @@ function parseInfoLine(line) {
         let pv = [];
         
         for (let i = 0; i < parts.length; i++) {
-            if (parts[i] === 'depth') depth = parseInt(parts[i + 1]);
+            if (parts[i] === 'depth') {
+                depth = parseInt(parts[i + 1]);
+            }
             if (parts[i] === 'score') {
                 const type = parts[i + 1];
                 const value = parseInt(parts[i + 2]);
                 score = type === 'cp' ? value / 100 : value;
             }
             if (parts[i] === 'pv') {
-                pv = parts.slice(i + 1, Math.min(i + 11, parts.length));
+                pv = parts.slice(i + 1, Math.min(i + 15, parts.length));
             }
         }
         
-        // Update top moves from PV
-        if (pv.length > 0 && depth >= 10) {
-            updateTopMovesFromPV(pv, score);
-            highlightBestMoves();
+        // Update moves if deep enough
+        if (pv.length > 0 && depth >= 12) {
+            updateTopMoves(pv, score);
+            highlightMoves();
+            updatePanel();
         }
     } catch (error) {
-        console.error('Error parsing info line:', error);
+        console.error('Parse error:', error);
     }
 }
 
-// Parse best move line
-function parseAnalysisLine(line) {
+// Parse best move
+function parseBestMove(line) {
     try {
-        const parts = line.split(' ');
-        const bestMove = parts[1];
-        console.log('Best move found:', bestMove);
-        
-        if (bestMove && bestMove.length >= 4) {
-            highlightBestMove(bestMove);
+        const match = line.match(/bestmove\s+(\S+)/);
+        if (match) {
+            const move = match[1];
+            console.log('🏆 Best move:', move);
+            highlightBestMove(move);
         }
     } catch (error) {
-        console.error('Error parsing analysis line:', error);
+        console.error('Best move parse error:', error);
     }
 }
 
-// Update top moves from principal variation
-function updateTopMovesFromPV(pv, evaluation) {
+// Update top moves list
+function updateTopMoves(pv, baseEval) {
     topMoves = [];
     
     pv.forEach((move, index) => {
-        if (index < 10) {
+        if (index < 10 && move.length >= 4) {
             topMoves.push({
-                move: move,
-                eval: evaluation - (index * 0.1), // Rough approximation
+                san: move,
+                eval: baseEval,
                 rank: index + 1,
                 from: move.substring(0, 2),
                 to: move.substring(2, 4)
@@ -181,168 +275,200 @@ function updateTopMovesFromPV(pv, evaluation) {
         }
     });
     
-    console.log('Top moves updated:', topMoves);
-    updatePanelMoves();
+    console.log('📋 Top moves:', topMoves.length);
 }
 
-// Start monitoring board
-function startMonitoring() {
-    console.log('Starting board monitoring');
+// Start monitoring board changes
+function startBoardMonitoring() {
+    console.log('👀 Starting board monitoring');
     
-    setInterval(() => {
-        if (!analysisEnabled || !engineReady) return;
+    const interval = setInterval(() => {
+        if (!analysisEnabled) {
+            clearInterval(interval);
+            return;
+        }
+        
+        if (!engineReady) {
+            return;
+        }
         
         try {
-            const fen = extractFEN();
+            const fen = extractBoardFEN();
             
             if (fen && fen !== lastAnalyzedFEN) {
-                console.log('New position detected:', fen);
+                console.log('🔄 New position detected');
                 lastAnalyzedFEN = fen;
                 currentFEN = fen;
                 
                 showPanel();
                 
-                // Send to Stockfish
-                sendToEngine('ucinewgame');
-                sendToEngine('position fen ' + fen);
-                sendToEngine('go depth 20');
+                // Analyze position
+                clearTimeout(analyzeTimeout);
+                analyzeTimeout = setTimeout(() => {
+                    sendEngineCommand('ucinewgame');
+                    sendEngineCommand('position fen ' + fen);
+                    sendEngineCommand('go depth 18');
+                }, 100);
             }
         } catch (error) {
-            console.error('Error monitoring board:', error);
+            console.error('Monitoring error:', error);
         }
-    }, 500);
+    }, 300);
 }
 
 // Extract FEN from board
-function extractFEN() {
-    // Chess.com
+function extractBoardFEN() {
+    // Try chess.com first
     const chessComBoard = document.querySelector('[data-testid="chessboard"]');
     if (chessComBoard) {
-        return extractChessComFEN();
+        return extractChessComFEN(chessComBoard);
     }
     
-    // Lichess
+    // Try lichess
     const lichessBoard = document.querySelector('cg-board');
     if (lichessBoard) {
-        return extractLichessFEN();
+        return extractLichessFEN(lichessBoard);
     }
     
     return null;
 }
 
 // Extract Chess.com FEN
-function extractChessComFEN() {
+function extractChessComFEN(board) {
     try {
-        const board = document.querySelector('[data-testid="chessboard"]');
-        if (!board) return null;
+        let fen = '';
         
-        const pieces = [];
-        
-        // Extract pieces from board
-        for (let rank = 7; rank >= 0; rank--) {
-            let fenRank = '';
-            let empty = 0;
+        // Scan board from rank 8 to 1
+        for (let rank = 8; rank >= 1; rank--) {
+            let rankStr = '';
+            let emptyCount = 0;
             
+            // Scan files a-h
             for (let file = 0; file < 8; file++) {
-                const sq = String.fromCharCode(97 + file) + (rank + 1);
-                const square = board.querySelector(`[data-square="${sq}"]`);
+                const fileChar = String.fromCharCode(97 + file);
+                const squareId = fileChar + rank;
+                const square = board.querySelector(`[data-square="${squareId}"]`);
                 
                 if (square) {
-                    const piece = getPiece(square);
+                    const piece = detectPiece(square);
+                    
                     if (piece) {
-                        if (empty) fenRank += empty;
-                        fenRank += piece;
-                        empty = 0;
+                        if (emptyCount > 0) {
+                            rankStr += emptyCount;
+                            emptyCount = 0;
+                        }
+                        rankStr += piece;
                     } else {
-                        empty++;
+                        emptyCount++;
                     }
                 } else {
-                    empty++;
+                    emptyCount++;
                 }
             }
-            if (empty) fenRank += empty;
-            pieces.push(fenRank || '8');
+            
+            if (emptyCount > 0) rankStr += emptyCount;
+            fen += rankStr;
+            
+            if (rank > 1) fen += '/';
         }
         
-        return pieces.join('/') + ' w KQkq - 0 1';
+        // Add standard ending
+        return fen + ' w KQkq - 0 1';
     } catch (error) {
-        console.error('Error extracting chess.com FEN:', error);
+        console.error('Chess.com FEN extract error:', error);
         return null;
     }
 }
 
 // Extract Lichess FEN
-function extractLichessFEN() {
+function extractLichessFEN(board) {
     try {
-        const board = document.querySelector('cg-board');
-        if (!board) return null;
-        
-        const pieces = [];
+        let fen = '';
         
         for (let rank = 7; rank >= 0; rank--) {
-            let fenRank = '';
-            let empty = 0;
+            let rankStr = '';
+            let emptyCount = 0;
             
             for (let file = 0; file < 8; file++) {
-                const square = board.querySelector(`[data-square="${file}${rank}"]`);
+                const square = board.querySelector(`[data-square="${file}${rank}"]`) ||
+                              board.querySelector(`[data-rank="${rank}"][data-file="${file}"]`);
                 
                 if (square) {
-                    const piece = getPiece(square);
+                    const piece = detectPiece(square);
+                    
                     if (piece) {
-                        if (empty) fenRank += empty;
-                        fenRank += piece;
-                        empty = 0;
+                        if (emptyCount > 0) {
+                            rankStr += emptyCount;
+                            emptyCount = 0;
+                        }
+                        rankStr += piece;
                     } else {
-                        empty++;
+                        emptyCount++;
                     }
                 } else {
-                    empty++;
+                    emptyCount++;
                 }
             }
-            if (empty) fenRank += empty;
-            pieces.push(fenRank || '8');
+            
+            if (emptyCount > 0) rankStr += emptyCount;
+            fen += rankStr;
+            
+            if (rank > 0) fen += '/';
         }
         
-        return pieces.join('/') + ' w KQkq - 0 1';
+        return fen + ' w KQkq - 0 1';
     } catch (error) {
-        console.error('Error extracting lichess FEN:', error);
+        console.error('Lichess FEN extract error:', error);
         return null;
     }
 }
 
-// Get piece from square
-function getPiece(square) {
+// Detect piece on square
+function detectPiece(square) {
     if (!square) return null;
     
-    const classList = square.className;
-    const html = square.innerHTML;
+    const classes = square.className || '';
+    const html = square.innerHTML || '';
+    const text = square.textContent || '';
     
-    // Map class names to pieces
+    // Check class-based detection
     const classMap = {
-        'wP': 'P', 'bP': 'p', 'wN': 'N', 'bN': 'n',
-        'wB': 'B', 'bB': 'b', 'wR': 'R', 'bR': 'r',
-        'wQ': 'Q', 'bQ': 'q', 'wK': 'K', 'bK': 'k'
+        'wP': 'P', 'bP': 'p',
+        'wN': 'N', 'bN': 'n',
+        'wB': 'B', 'bB': 'b',
+        'wR': 'R', 'bR': 'r',
+        'wQ': 'Q', 'bQ': 'q',
+        'wK': 'K', 'bK': 'k'
     };
     
-    for (const [key, value] of Object.entries(classMap)) {
-        if (classList.includes(key)) return value;
+    for (const [cls, piece] of Object.entries(classMap)) {
+        if (classes.includes(cls)) return piece;
     }
     
-    // Check unicode
-    const unicodeMap = {
+    // Check for piece emoji/unicode
+    const pieceMap = {
         '♔': 'K', '♕': 'Q', '♖': 'R', '♗': 'B', '♘': 'N', '♙': 'P',
         '♚': 'k', '♛': 'q', '♜': 'r', '♝': 'b', '♞': 'n', '♟': 'p'
     };
     
-    for (const [unicode, piece] of Object.entries(unicodeMap)) {
-        if (html.includes(unicode)) return piece;
+    for (const [symbol, piece] of Object.entries(pieceMap)) {
+        if (html.includes(symbol) || text.includes(symbol)) return piece;
+    }
+    
+    // Check for SVG or other piece representations
+    const svg = square.querySelector('svg');
+    if (svg) {
+        const svgClass = svg.className?.baseVal || svg.getAttribute('class') || '';
+        for (const [cls, piece] of Object.entries(classMap)) {
+            if (svgClass.includes(cls)) return piece;
+        }
     }
     
     return null;
 }
 
 // Highlight best moves on board
-function highlightBestMoves() {
+function highlightMoves() {
     clearAllHighlights();
     
     if (!analysisEnabled || topMoves.length === 0) return;
@@ -352,104 +478,113 @@ function highlightBestMoves() {
     if (!board) return;
     
     // Highlight top 3 moves
-    topMoves.slice(0, 3).forEach((move, index) => {
-        const color = index === 0 ? '#4caf50' : index === 1 ? '#8bc34a' : '#cddc39';
+    topMoves.slice(0, 3).forEach((move, idx) => {
+        const colors = ['#4caf50', '#8bc34a', '#ffc107'];
+        const color = colors[idx];
         
-        highlightSquare(board, move.from, color);
-        highlightSquare(board, move.to, color);
-        addMoveLabel(board, move.to, move.eval.toFixed(2), color);
+        // Highlight from and to squares
+        addSquareHighlight(board, move.from, color);
+        addSquareHighlight(board, move.to, color);
+        
+        // Add evaluation label
+        addEvaluationLabel(board, move.to, move.eval.toFixed(2));
     });
 }
 
-// Highlight single square
-function highlightSquare(board, square, color) {
-    if (!square || square.length !== 2) return;
+// Add highlight to square
+function addSquareHighlight(board, squareId, color) {
+    if (!squareId || squareId.length !== 2) return;
     
-    // Chess.com selector
-    let sq = board.querySelector(`[data-square="${square}"]`);
+    let square = board.querySelector(`[data-square="${squareId}"]`);
     
-    // Lichess selector
-    if (!sq) {
-        const file = square.charCodeAt(0) - 97;
-        const rank = parseInt(square[1]) - 1;
-        sq = board.querySelector(`[data-square="${file}${rank}"]`);
+    if (!square) {
+        const file = squareId.charCodeAt(0) - 97;
+        const rank = parseInt(squareId[1]) - 1;
+        square = board.querySelector(`[data-file="${file}"][data-rank="${rank}"]`) ||
+                board.querySelector(`[data-square="${file}${rank}"]`);
     }
     
-    if (sq) {
-        const highlight = document.createElement('div');
-        highlight.className = 'chess-engine-highlight';
-        highlight.style.cssText = `
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: ${color};
-            opacity: 0.3;
-            pointer-events: none;
-            z-index: 100;
-        `;
-        
-        sq.style.position = 'relative';
-        sq.appendChild(highlight);
-        boardHighlights.push(highlight);
-    }
+    if (!square) return;
+    
+    // Create overlay
+    const overlay = document.createElement('div');
+    overlay.className = 'chess-highlight-overlay';
+    overlay.style.cssText = `
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: ${color};
+        opacity: 0.35;
+        pointer-events: none;
+        z-index: 50;
+        border-radius: 4px;
+    `;
+    
+    square.style.position = 'relative';
+    square.appendChild(overlay);
+    boardHighlights.push(overlay);
 }
 
-// Add move evaluation label
-function addMoveLabel(board, square, evaluation, color) {
-    let sq = board.querySelector(`[data-square="${square}"]`);
+// Add evaluation label to square
+function addEvaluationLabel(board, squareId, evalStr) {
+    if (!squareId || squareId.length !== 2) return;
     
-    if (!sq) {
-        const file = square.charCodeAt(0) - 97;
-        const rank = parseInt(square[1]) - 1;
-        sq = board.querySelector(`[data-square="${file}${rank}"]`);
+    let square = board.querySelector(`[data-square="${squareId}"]`);
+    
+    if (!square) {
+        const file = squareId.charCodeAt(0) - 97;
+        const rank = parseInt(squareId[1]) - 1;
+        square = board.querySelector(`[data-file="${file}"][data-rank="${rank}"]`) ||
+                board.querySelector(`[data-square="${file}${rank}"]`);
     }
     
-    if (sq) {
-        const label = document.createElement('div');
-        label.className = 'chess-engine-label';
-        label.textContent = '+' + evaluation;
-        label.style.cssText = `
-            position: absolute;
-            bottom: 2px;
-            right: 2px;
-            background: rgba(0, 0, 0, 0.8);
-            color: ${color};
-            padding: 2px 4px;
-            font-size: 10px;
-            font-weight: bold;
-            border-radius: 2px;
-            pointer-events: none;
-            z-index: 200;
-        `;
-        
-        sq.style.position = 'relative';
-        sq.appendChild(label);
-        boardHighlights.push(label);
-    }
+    if (!square) return;
+    
+    const label = document.createElement('div');
+    label.className = 'chess-eval-label';
+    label.textContent = '+' + evalStr;
+    label.style.cssText = `
+        position: absolute;
+        bottom: 2px;
+        right: 2px;
+        background: rgba(0, 0, 0, 0.85);
+        color: #4caf50;
+        padding: 2px 4px;
+        font-size: 11px;
+        font-weight: bold;
+        border-radius: 2px;
+        pointer-events: none;
+        z-index: 100;
+        font-family: monospace;
+    `;
+    
+    square.style.position = 'relative';
+    square.appendChild(label);
+    boardHighlights.push(label);
 }
 
-// Highlight best move in green
-function highlightBestMove(move) {
-    if (!move || move.length < 4) return;
-    
-    const from = move.substring(0, 2);
-    const to = move.substring(2, 4);
+// Highlight best move
+function highlightBestMove(moveStr) {
+    if (!moveStr || moveStr.length < 4) return;
     
     const board = document.querySelector('[data-testid="chessboard"]') || 
                   document.querySelector('cg-board');
     if (!board) return;
     
-    highlightSquare(board, from, '#4caf50');
-    highlightSquare(board, to, '#4caf50');
+    const from = moveStr.substring(0, 2);
+    const to = moveStr.substring(2, 4);
+    
+    addSquareHighlight(board, from, '#4caf50');
+    addSquareHighlight(board, to, '#4caf50');
 }
 
 // Clear all highlights
 function clearAllHighlights() {
-    boardHighlights.forEach(h => {
+    boardHighlights.forEach(element => {
         try {
-            h.remove();
+            element.remove();
         } catch (e) {}
     });
     boardHighlights = [];
@@ -457,72 +592,78 @@ function clearAllHighlights() {
 
 // Show floating panel
 function showPanel() {
-    let panel = document.getElementById('chess-engine-panel');
+    let panel = document.getElementById('chess-engine-analysis-panel');
     
     if (!panel) {
         panel = document.createElement('div');
-        panel.id = 'chess-engine-panel';
+        panel.id = 'chess-engine-analysis-panel';
         panel.style.cssText = `
             position: fixed;
             right: 20px;
             top: 20px;
-            width: 300px;
+            width: 320px;
             background: white;
             border-radius: 12px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+            box-shadow: 0 10px 40px rgba(0,0,0,0.25);
             z-index: 10000;
             font-family: Arial, sans-serif;
-            padding: 0;
             overflow: hidden;
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
         `;
         
         panel.innerHTML = `
-            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px; display: flex; justify-content: space-between; align-items: center;">
-                <h3 style="margin: 0; font-size: 16px;">♟️ Chess Engine</h3>
-                <button id="closePanel" style="background: none; border: none; color: white; font-size: 18px; cursor: pointer;">✕</button>
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;">
+                <h3 style="margin: 0; font-size: 16px; font-weight: bold;">♟️ Analiza Szachów</h3>
+                <button id="closeAnalysisPanel" style="background: none; border: none; color: white; font-size: 20px; cursor: pointer; padding: 0;">✕</button>
             </div>
-            <div style="padding: 15px;">
-                <div id="engineMovesList" style="max-height: 400px; overflow-y: auto;"></div>
-            </div>
+            <div id="movesList" style="padding: 12px; overflow-y: auto; flex: 1;"></div>
         `;
         
         document.body.appendChild(panel);
         
-        document.getElementById('closePanel').addEventListener('click', () => {
+        document.getElementById('closeAnalysisPanel').addEventListener('click', () => {
             panel.style.display = 'none';
         });
     }
     
-    panel.style.display = 'block';
-    updatePanelMoves();
+    panel.style.display = 'flex';
 }
 
 // Update panel with moves
-function updatePanelMoves() {
-    const movesList = document.getElementById('engineMovesList');
+function updatePanel() {
+    const movesList = document.getElementById('movesList');
     if (!movesList) return;
     
     if (topMoves.length === 0) {
-        movesList.innerHTML = '<div style="color: #999; text-align: center; padding: 20px;">Analyzing...</div>';
+        movesList.innerHTML = '<div style="color: #999; text-align: center; padding: 20px; font-size: 13px;">Analizuję pozycję...</div>';
         return;
     }
     
-    movesList.innerHTML = topMoves.slice(0, 10).map((m, i) => `
-        <div style="padding: 10px; background: ${i === 0 ? '#e8f5e9' : '#f5f5f5'}; margin-bottom: 6px; border-radius: 4px; border-left: 4px solid ${i === 0 ? '#4caf50' : '#667eea'};">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <span style="font-weight: bold;">#${i + 1} ${m.move}</span>
-                <span style="color: ${m.eval > 0 ? '#4caf50' : '#d32f2f'}; font-weight: bold;">
-                    ${m.eval > 0 ? '+' : ''}${m.eval.toFixed(2)}
-                </span>
+    movesList.innerHTML = topMoves.slice(0, 10).map((m, i) => {
+        const isBest = i === 0;
+        const bgColor = isBest ? '#e8f5e9' : '#f5f5f5';
+        const borderColor = isBest ? '#4caf50' : '#667eea';
+        const evalColor = m.eval > 0 ? '#4caf50' : m.eval < 0 ? '#d32f2f' : '#333';
+        
+        return `
+            <div style="padding: 10px; background: ${bgColor}; margin-bottom: 6px; border-radius: 6px; border-left: 4px solid ${borderColor}; font-size: 13px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-weight: bold; color: ${borderColor};">#${i + 1} ${m.san}</span>
+                    <span style="color: ${evalColor}; font-weight: bold; font-family: monospace;">
+                        ${m.eval > 0 ? '+' : ''}${m.eval.toFixed(2)}
+                    </span>
+                </div>
             </div>
-        </div>
-    `).join('');
+        `;
+    }).join('');
 }
 
 // Hide panel
 function hidePanel() {
-    const panel = document.getElementById('chess-engine-panel');
+    const panel = document.getElementById('chess-engine-analysis-panel');
     if (panel) panel.style.display = 'none';
 }
 
-console.log('Chess Engine content script ready');
+console.log('✅ Chess Engine ready!');
